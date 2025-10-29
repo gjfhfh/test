@@ -215,6 +215,59 @@ class Frame:
 
         self.push(callable_obj(*pos_values, **kwargs))
 
+    def raise_varargs_op(self, argc: int) -> None:
+        """
+        Operation description:
+                https://docs.python.org/release/3.13.7/library/dis.html#opcode-RAISE_VARARGS
+        Raises an exception using one of the three formats:
+            RAISE_VARARGS 0: re-raise exception
+            RAISE_VARARGS 1: raise exception with type on stack
+            RAISE_VARARGS 2: raise exception with type and value on stack
+            RAISE_VARARGS 3: raise exception with type, value, and traceback on stack
+        """
+        if argc == 0:
+            # Re-raise the current exception
+            # This is a simplification, real CPython has more complex logic
+            raise  # Re-raises the last exception if any
+        elif argc == 1:
+            # Raise exception with type on stack
+            exc = self.pop()
+            if isinstance(exc, type):
+                # If it's an exception class, instantiate it
+                exc = exc()
+            raise exc
+        elif argc == 2:
+            # Raise exception with type and value on stack
+            val = self.pop()
+            exc_type = self.pop()
+            if isinstance(exc_type, type):
+                exc = exc_type(val)
+            else:
+                # If exc_type is not a class, val is the actual exception instance
+                exc = val
+            raise exc
+        elif argc == 3:
+            # Raise exception with type, value, and traceback on stack
+            tb = self.pop()
+            val = self.pop()
+            exc_type = self.pop()
+            if isinstance(exc_type, type):
+                exc = exc_type(val)
+            else:
+                exc = val
+            # Attach traceback - simplified
+            exc.__traceback__ = tb
+            raise exc
+        else:
+            raise ValueError(f"RAISE_VARARGS with argc={argc} is not supported")
+    
+    def load_assertion_error_op(self, _arg: int | None) -> None:
+        self.push(AssertionError)
+
+    def swap_op(self, n: int) -> None:
+        if n <= 0 or n > len(self.data_stack):
+            raise IndexError("SWAP out of stack range")
+        self.data_stack[-n], self.data_stack[-1] = self.data_stack[-1], self.data_stack[-n]
 
     def load_name_op(self, arg: str) -> None:
         """
@@ -510,14 +563,25 @@ class Frame:
 
         else:
             raise NotImplementedError(f"CALL_INTRINSIC_1: unknown intrinsic {intrinsic}")
+    
+    def _resolve_fast_name(self, name_or_index: tp.Any) -> str:
+        if isinstance(name_or_index, tuple):
+            name_or_index = name_or_index[0]
+        if isinstance(name_or_index, int):
+            return self.code.co_varnames[name_or_index]
+        return name_or_index
 
     def store_fast_op(self, name_or_index: tp.Any) -> None:
-        if isinstance(name_or_index, int):
-            name = self.code.co_varnames[name_or_index]
-        else:
-            name = name_or_index
+        name = self._resolve_fast_name(name_or_index)
         value = self.pop()
         self.locals[name] = value
+
+    def delete_fast_op(self, name_or_index: tp.Any) -> None:
+        name = self._resolve_fast_name(name_or_index)
+        try:
+            del self.locals[name]
+        except KeyError:
+            raise UnboundLocalError(name)
     
     def build_list_op(self, n: int) -> None:
         elems = self.popn(n)
@@ -728,6 +792,22 @@ class Frame:
             raise ValueError(f"IS_OP: invalid argument {arg}")
 
         self.push(result)
+    
+    def load_build_class_op(self, _arg: int | None) -> None:
+        self.push(self.builtins['__build_class__'])
+
+    def store_attr_op(self, name_or_flag: tp.Any) -> None:
+        name = _normolize_attr_name(name_or_flag)
+        value = self.pop()
+        obj = self.pop()
+        setattr(obj, name, value)
+
+    def load_method_op(self, name_or_flag: tp.Any) -> None:
+        name = _normolize_attr_name(name_or_flag)
+        obj = self.pop()
+        meth = getattr(obj, name)
+        self.push(meth)
+
     
     
     def convert_value_op(self, kind: tp.Any) -> None:
