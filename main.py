@@ -15,8 +15,6 @@ from typing import Any
 
 _BinaryOperator = tp.Callable[[tp.Any, tp.Any], tp.Any]
 
-CO_GENERATOR = 0x20
-
 def _build_binary_ops_mapping() -> dict[int, _BinaryOperator]:
     ops: list[tuple[str, str]] = getattr(dis, "_nb_ops")
 
@@ -86,10 +84,6 @@ class Frame:
         self.data_stack: tp.Any = []
         self.return_value = None
         self.pending_kw_names: tuple[str, ...] | None = None
-        self.instructions = list(dis.get_instructions(self.code))
-        self.offset_to_index = {instruction.offset: index for index, instruction in enumerate(self.instructions)}
-        self.ip = 0
-        self.last_yield: tp.Any = None
 
     def kw_names_op(self, name_index: int) -> None:
         const = self.code.co_consts[name_index]
@@ -119,44 +113,26 @@ class Frame:
             return []
 
     def run(self) -> tp.Any:
-        while self.ip < len(self.instructions):
-            outcome = self._execute_current_instruction()
-            if outcome == "RETURN":
-                break
+        instructions = list(dis.get_instructions(self.code))
+        offset_to_index = {instruction.offset:index for index, instruction in enumerate(instructions)}
+
+        ip = 0
+        while ip < len(instructions):
+            ins = instructions[ip]
+            handler = getattr(self, ins.opname.lower() + "_op", None)
+            if handler is None:
+                raise NotImplementedError(f"opcode not supported: {ins.opname}")
+            arg = ins.argval
+            if ins.opname == "KW_NAMES":
+                arg = ins.arg
+            elif arg is None and ins.arg is not None and ins.opname != "LOAD_CONST":
+                arg = ins.arg
+            result = handler(arg)
+            if isinstance(result, int):
+                ip = offset_to_index[result]
+            else:
+                ip += 1
         return self.return_value
-
-    def _execute_current_instruction(self) -> tp.Any:
-        ins = self.instructions[self.ip]
-        handler = getattr(self, ins.opname.lower() + "_op", None)
-        if handler is None:
-            raise NotImplementedError(f"opcode not supported: {ins.opname}")
-        arg = ins.argval
-        if ins.opname == "KW_NAMES":
-            arg = ins.arg
-        elif arg is None and ins.arg is not None and ins.opname != "LOAD_CONST":
-            arg = ins.arg
-        result = handler(arg)
-        if isinstance(result, int):
-            self.ip = self.offset_to_index[result]
-        else:
-            self.ip += 1
-        return result
-
-    def prepare_generator(self) -> None:
-        while self.ip < len(self.instructions):
-            outcome = self._execute_current_instruction()
-            if outcome == "RETURN_GENERATOR":
-                return
-        raise RuntimeError("RETURN_GENERATOR not encountered")
-
-    def run_until_yield(self) -> tuple[bool, tp.Any]:
-        while self.ip < len(self.instructions):
-            outcome = self._execute_current_instruction()
-            if outcome == "YIELD":
-                return False, self.last_yield
-            if outcome == "RETURN":
-                return True, self.return_value
-        return True, self.return_value
 
     def resume_op(self, arg: int) -> tp.Any:
         return None
@@ -300,11 +276,9 @@ class Frame:
               https://docs.python.org/release/3.13.7/library/dis.html#opcode-RETURN_VALUE
         """
         self.return_value = self.pop()
-        return "RETURN"
 
     def return_const_op(self, arg: tp.Any) -> None:
         self.return_value = arg
-        return "RETURN"
 
     def pop_top_op(self, arg: tp.Any) -> None:
         """
@@ -335,8 +309,6 @@ class Frame:
                 kwdefaults=kwdefaults,
             )
             frame = Frame(code, self.builtins, self.globals, mapping)
-            if code.co_flags & CO_GENERATOR:
-                return _VirtualGenerator(frame)
             return frame.run()
 
         # Ничего не проставляем здесь — это сделает SET_FUNCTION_ATTRIBUTE позже
@@ -555,11 +527,6 @@ class Frame:
         elems = self.popn(n)
         self.push(tuple(elems))
 
-    def build_string_op(self, count: int) -> None:
-        parts = self.popn(count)
-        result = ''.join(str(part) for part in parts)
-        self.push(result)
-
     def set_function_attribute_op(self, kind: int) -> None:
         func = self.pop()
         value = self.pop()
@@ -578,12 +545,6 @@ class Frame:
 
     
     def load_attr_op(self, name_or_flag: tp.Any) -> None:
-        name = _normolize_attr_name(name_or_flag)
-        obj = self.pop()
-        attr = getattr(obj, name)
-        self.push(attr)
-
-    def load_method_op(self, name_or_flag: tp.Any) -> None:
         name = _normolize_attr_name(name_or_flag)
         obj = self.pop()
         attr = getattr(obj, name)
@@ -609,7 +570,6 @@ class Frame:
             self.push(next(it))     # получили следующий элемент — продолжаем
             return None             # ip += 1
         except StopIteration:
-            self.pop()
             return target_offset    # прыжок к END_FOR
 
     def end_for_op(self, arg: int) -> None:
@@ -670,13 +630,6 @@ class Frame:
         container = self.pop()
         del container[key]
 
-    def return_generator_op(self, _arg: tp.Any) -> str:
-        return "RETURN_GENERATOR"
-
-    def yield_value_op(self, _arg: tp.Any) -> str:
-        self.last_yield = self.pop()
-        return "YIELD"
-
     def binary_slice_op(self, _arg: tp.Any) -> None:
         end = self.pop()
         start = self.pop()
@@ -713,7 +666,7 @@ class Frame:
         value = self.pop()
         target = self.data_stack[-count]
         target.append(value)
-
+    
     def list_extend_op(self, count: int) -> None:
         iterable = self.pop()
         target = self.data_stack[-count]
@@ -763,36 +716,6 @@ class Frame:
             raise TypeError("SET_UPDATE requires set as target")
         target.update(mapping)
 
-    def format_value_op(self, flags: tp.Any) -> None:
-        converter: tp.Callable[[tp.Any], str] | None
-        has_format: bool
-
-        if isinstance(flags, tuple):
-            converter, has_format = flags
-        else:
-            has_format = bool(flags & 0x04)
-            index = flags & 0x03
-            converter = dis.FORMAT_VALUE_CONVERTERS[index][0]
-
-        fmt_spec = self.pop() if has_format else None
-        value = self.pop()
-
-        if converter is str:
-            value = str(value)
-        elif converter is repr:
-            value = repr(value)
-        elif converter is ascii:
-            value = ascii(value)
-
-        if fmt_spec is not None:
-            formatted = format(value, fmt_spec)
-        elif isinstance(value, str):
-            formatted = value
-        else:
-            formatted = str(value)
-
-        self.push(formatted)
-
     def is_op_op(self, arg: int) -> None:
         right = self.pop()
         left = self.pop()
@@ -805,7 +728,52 @@ class Frame:
             raise ValueError(f"IS_OP: invalid argument {arg}")
 
         self.push(result)
+    
+    
+    def convert_value_op(self, kind: tp.Any) -> None:
+        """
+        В dis.argval может быть int-код (0..3) или сам объект: <class 'str'>, repr, ascii.
+        0 / None  -> без конверсии
+        1 / str   -> str()
+        2 / repr  -> repr()
+        3 / ascii -> ascii()
+        """
+        v = self.pop()
 
+        token: str | None = None
+
+        if kind is None or kind == 0:
+            token = "none"
+        elif kind == 1 or kind is str or kind == "str":
+            token = "str"
+        elif kind == 2 or kind is repr or kind == "repr":
+            token = "repr"
+        elif kind == 3 or kind is ascii or kind == "ascii":
+            token = "ascii"
+        else:
+            token = "str"
+
+        if token == "none":
+            res = v
+        elif token == "str":
+            res = str(v)
+        elif token == "repr":
+            res = repr(v)
+        elif token == "ascii":
+            res = ascii(v)
+        else:
+            res = v
+
+        self.push(res)
+
+
+    def format_simple_op(self, _arg: int | None) -> None:
+        value = self.pop()
+        self.push(str(value))
+    
+    def build_string_op(self, n: int) -> None:
+        parts = self.popn(n)
+        self.push("".join(parts))
 
     # --- Frame.resume_op / precall_op ---
     def resume_op(self, arg: int) -> None:
@@ -813,35 +781,7 @@ class Frame:
 
     def precall_op(self, arg: int) -> None:
         return  # no-op
-
-
-class _VirtualGenerator:
-    def __init__(self, frame: Frame) -> None:
-        self._frame = frame
-        self._started = False
-        self._finished = False
-
-    def __iter__(self) -> "_VirtualGenerator":
-        return self
-
-    def __next__(self) -> tp.Any:
-        return self.send(None)
-
-    def send(self, value: tp.Any) -> tp.Any:
-        if self._finished:
-            raise StopIteration
-        if not self._started:
-            if value is not None:
-                raise TypeError("can't send non-None value to a just-started generator")
-            self._frame.prepare_generator()
-            self._started = True
-        self._frame.push(value)
-        completed, result = self._frame.run_until_yield()
-        if completed:
-            self._finished = True
-            raise StopIteration(result)
-        return result
-
+    
 
 # --- VirtualMachine.run ---
 class VirtualMachine:
