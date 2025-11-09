@@ -3,6 +3,7 @@ import java.util.*;
 
 public class Main {
   private static class FastReader {
+
     BufferedReader reader;
     StringTokenizer tokenizer;
 
@@ -25,10 +26,29 @@ public class Main {
       return Integer.parseInt(next());
     }
 
+    private long nextLong() {
+      return Long.parseLong(next());
+    }
+
     private double nextDouble() {
       return Double.parseDouble(next());
     }
+
+    private String nextLine() {
+      String str = "";
+      try {
+        if (tokenizer.hasMoreTokens()) {
+          str = tokenizer.nextToken("\n");
+        } else {
+          str = reader.readLine();
+        }
+      } catch (IOException e) {
+        e.printStackTrace();
+      }
+      return str;
+    }
   }
+
 
   public static void main(String[] args) {
     FastReader in = new FastReader();
