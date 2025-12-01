@@ -706,3 +706,63 @@ class RightJoiner(Joiner):
 
                 b = nb
                 kb = _key_by(b, keys)
+
+class ComputeColumn(Mapper):
+    """
+    Mapper which adds a new column by computing a function on the row.
+    """
+
+    def __init__(self, new_column: str, func: tp.Callable[[TRow], tp.Any]):
+        """
+        :param new_column: name of the new column to add
+        :param func: function that takes row and returns value
+        """
+        self._new_column = new_column
+        self._func = func
+
+    def __call__(self, row: TRow) -> TRowsGenerator:
+        new_row = dict(row)
+        new_row[self._new_column] = self._func(row)
+        yield new_row
+
+class Average(Reducer):
+    """
+    Computes average of a column grouped by key(s).
+    """
+
+    def __init__(self, column: str, result_column: tp.Optional[str] = None):
+        """
+        :param column: column to average
+        :param result_column: name of the output column; if None, use the same as input
+        """
+        self._column = column
+        self._result_column = result_column or column
+
+    def __call__(
+        self, group_key: tuple[str, ...], rows: TRowsIterable
+    ) -> TRowsGenerator:
+        total: float = 0.0
+        count: int = 0
+        sample_row: tp.Optional[TRow] = None
+
+        for r in rows:
+            sample_row = sample_row or r
+            value = r.get(self._column)
+            if value is None:
+                continue
+            try:
+                total += float(value)
+                count += 1
+            except Exception:
+                continue
+
+        if count == 0 or sample_row is None:
+            return
+        avg = total / count
+        out: TRow = {}
+        for k in group_key:
+            if k in sample_row:
+                out[k] = sample_row[k]
+
+        out[self._result_column] = avg
+        yield out
