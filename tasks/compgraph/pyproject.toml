@@ -16,3 +16,6 @@ dependencies = []
 [tool.setuptools.packages.find]
 where = ["."]
 exclude = ["resources*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
