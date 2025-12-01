@@ -1,59 +1,78 @@
+from __future__ import annotations
+
 import typing as tp
 
 from . import operations as ops
+from .external_sort import ExternalSort
+
+Builder = tp.Callable[..., ops.TRowsIterable]
 
 
 class Graph:
-    """Computational graph implementation"""
+    """Computation graph built from a chain of operations."""
+
+    def __init__(self, builder: Builder) -> None:
+        self._builder = builder
 
     @staticmethod
     def graph_from_iter(name: str) -> 'Graph':
-        """Construct new graph which reads data from row iterator (in form of sequence of Rows
-        from 'kwargs' passed to 'run' method) into graph data-flow
-        Use ops.ReadIterFactory
-        :param name: name of kwarg to use as data source
+        """Create graph that reads rows from iterator factory provided to :meth:`run`.
+
+        Parameters
+        ----------
+        name:
+            Keyword argument name with callable returning iterator over rows.
         """
-        raise NotImplementedError
+
+        def builder(**kwargs: tp.Any) -> ops.TRowsIterable:
+            return ops.ReadIterFactory(name)(**kwargs)
+
+        return Graph(builder)
 
     @staticmethod
     def graph_from_file(filename: str, parser: tp.Callable[[str], ops.TRow]) -> 'Graph':
-        """Construct new graph extended with operation for reading rows from file
-        Use ops.Read
-        :param filename: filename to read from
-        :param parser: parser from string to Row
-        """
-        raise NotImplementedError
+        """Create graph reading rows from file using provided parser."""
 
-    # If you would like to implement __init__ and/or @classmethods instead of methods above,
-    #  feel free to do so. However, the __init__ method should not accept any arguments.
+        def builder(**_kwargs: tp.Any) -> ops.TRowsIterable:
+            return ops.Read(filename, parser)(**_kwargs)
+
+        return Graph(builder)
 
     def map(self, mapper: ops.Mapper) -> 'Graph':
-        """Construct new graph extended with map operation with particular mapper
-        :param mapper: mapper to use
-        """
-        raise NotImplementedError
+        """Extend graph with :class:`operations.Map` step."""
+
+        def builder(**kwargs: tp.Any) -> ops.TRowsIterable:
+            return ops.Map(mapper)(self._builder(**kwargs))
+
+        return Graph(builder)
 
     def reduce(self, reducer: ops.Reducer, keys: tp.Sequence[str]) -> 'Graph':
-        """Construct new graph extended with reduce operation with particular reducer
-        :param reducer: reducer to use
-        :param keys: keys for grouping
-        """
-        raise NotImplementedError
+        """Extend graph with :class:`operations.Reduce` step."""
+
+        def builder(**kwargs: tp.Any) -> ops.TRowsIterable:
+            return ops.Reduce(reducer, keys)(self._builder(**kwargs))
+
+        return Graph(builder)
 
     def sort(self, keys: tp.Sequence[str]) -> 'Graph':
-        """Construct new graph extended with sort operation
-        :param keys: sorting keys (typical is tuple of strings)
-        """
-        raise NotImplementedError
+        """Extend graph with external sort step."""
+
+        sort_op = ExternalSort(tuple(keys))
+
+        def builder(**kwargs: tp.Any) -> ops.TRowsIterable:
+            return sort_op(self._builder(**kwargs))
+
+        return Graph(builder)
 
     def join(self, joiner: ops.Joiner, join_graph: 'Graph', keys: tp.Sequence[str]) -> 'Graph':
-        """Construct new graph extended with join operation with another graph
-        :param joiner: join strategy to use
-        :param join_graph: other graph to join with
-        :param keys: keys for grouping
-        """
-        raise NotImplementedError
+        """Extend graph with join against another graph."""
+
+        def builder(**kwargs: tp.Any) -> ops.TRowsIterable:
+            return ops.Join(joiner, keys)(self._builder(**kwargs), join_graph._builder(**kwargs))
+
+        return Graph(builder)
 
     def run(self, **kwargs: tp.Any) -> ops.TRowsIterable:
-        """Single method to start execution; data sources passed as kwargs"""
-        raise NotImplementedError
+        """Start graph execution with provided data sources."""
+
+        return self._builder(**kwargs)
