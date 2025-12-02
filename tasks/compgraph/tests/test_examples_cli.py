@@ -3,7 +3,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from examples import run_word_count, run_yandex_maps
+import math
+from pathlib import Path
+
+import pytest
+
+from examples import run_inverted_index, run_pmi, run_word_count, run_yandex_maps
 from psutil import Process
 
 
@@ -70,3 +75,49 @@ def test_yandex_maps_example_cli(tmp_path: Path) -> None:
 
     rows = _read_output(output_path)
     assert rows == [{"weekday": "Tue", "hour": 1, "speed": 1.0}]
+
+
+def test_inverted_index_example_cli(tmp_path: Path) -> None:
+    docs = [
+        {"doc_id": 1, "text": "Apple banana apple"},
+        {"doc_id": 2, "text": "Banana orange"},
+    ]
+
+    input_path = tmp_path / "docs.jsonl"
+    input_path.write_text("\n".join(json.dumps(row) for row in docs), encoding="utf-8")
+
+    output_path = tmp_path / "tfidf.jsonl"
+    run_inverted_index.main(["--input", str(input_path), "--output", str(output_path)])
+
+    rows = _read_output(output_path)
+    rows = sorted(rows, key=lambda r: (r["text"], -r["tf_idf"], r["doc_id"]))
+
+    assert rows == [
+        {"doc_id": 1, "text": "apple", "tf_idf": pytest.approx((2 / 3) * math.log(2))},
+        {"doc_id": 1, "text": "banana", "tf_idf": pytest.approx(0)},
+        {"doc_id": 2, "text": "banana", "tf_idf": pytest.approx(0)},
+        {"doc_id": 2, "text": "orange", "tf_idf": pytest.approx(0.5 * math.log(2))},
+    ]
+
+
+def test_pmi_example_cli(tmp_path: Path) -> None:
+    docs = [
+        {"doc_id": 1, "text": "apple apple apple kiwi kiwi"},
+        {"doc_id": 2, "text": "apple apple mango mango mango"},
+    ]
+
+    input_path = tmp_path / "docs.jsonl"
+    input_path.write_text("\n".join(json.dumps(row) for row in docs), encoding="utf-8")
+
+    output_path = tmp_path / "pmi.jsonl"
+    run_pmi.main(["--input", str(input_path), "--output", str(output_path)])
+
+    rows = _read_output(output_path)
+    rows = sorted(rows, key=lambda r: (r["doc_id"], -r["pmi"], r["text"]))
+
+    expected_pmi = math.log(1.6)
+    assert rows == [
+        {"doc_id": 1, "text": "apple", "pmi": pytest.approx(expected_pmi)},
+        {"doc_id": 2, "text": "mango", "pmi": pytest.approx(expected_pmi)},
+        {"doc_id": 2, "text": "apple", "pmi": pytest.approx(math.log(0.64))},
+    ]
