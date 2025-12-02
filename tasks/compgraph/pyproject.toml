@@ -5,13 +5,19 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "compgraph"
 version = "0.1.0"
-description = "Пример моего пакета"
+description = "Streaming computation graphs with map/reduce/join helpers"
 authors = [
-  { name="Your Name", email="you@example.com" }
+  { name="Compgraph Maintainer", email="maintainer@example.com" }
 ]
-readme = "README.md"
+readme = "LIB_README.md"
 requires-python = ">=3.10"
 dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8.2", "pytest-cov>=4.1"]
+
+[tool.setuptools]
+py-modules = ["psutil"]
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -19,3 +25,6 @@ exclude = ["resources*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+markers = [
+  "timeout: mark tests with execution timeout",
+]
