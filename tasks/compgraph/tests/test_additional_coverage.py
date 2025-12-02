@@ -66,3 +66,4 @@ def test_average_skips_groups_without_numeric_values() -> None:
     graph = Graph.graph_from_iter("rows").reduce(reducer, ["group"])
 
     assert list(graph.run(rows=lambda: iter(rows))) == []
+

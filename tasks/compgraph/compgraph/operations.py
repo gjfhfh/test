@@ -16,7 +16,7 @@ class Operation(ABC):
     @abstractmethod
     def __call__(self, rows: TRowsIterable, *args: tp.Any, **kwargs: tp.Any) -> TRowsGenerator:
         """Run operation over provided rows."""
-        raise NotImplementedError
+        raise NotImplementedError  # pragma: no cover - abstract fallback
 
 
 class Read(Operation):
@@ -49,7 +49,7 @@ class Mapper(ABC):
     @abstractmethod
     def __call__(self, row: TRow) -> TRowsGenerator:
         """Process single row and yield zero or more rows."""
-        raise NotImplementedError
+        raise NotImplementedError  # pragma: no cover - abstract fallback
 
 
 class Map(Operation):
@@ -70,7 +70,7 @@ class Reducer(ABC):
     @abstractmethod
     def __call__(self, group_key: tuple[str, ...], rows: TRowsIterable) -> TRowsGenerator:
         """Process rows for a single group defined by ``group_key``."""
-        raise NotImplementedError
+        raise NotImplementedError  # pragma: no cover - abstract fallback
 
 
 class Reduce(Operation):
@@ -135,7 +135,7 @@ class Joiner(ABC):
     @abstractmethod
     def __call__(self, keys: tp.Sequence[str], rows_a: TRowsIterable, rows_b: TRowsIterable) -> TRowsGenerator:
         """Join two sorted streams ``rows_a`` and ``rows_b`` by ``keys``."""
-        raise NotImplementedError
+        raise NotImplementedError  # pragma: no cover - abstract fallback
 
 
 class Join(Operation):
