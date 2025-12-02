@@ -1,15 +1,15 @@
-"""Run the word count pipeline against a JSONL corpus."""
+"""Run TF-IDF inverted index calculation on a JSONL corpus."""
 from __future__ import annotations
 
 import argparse
 
-from compgraph.algorithms import word_count_graph
+from compgraph.algorithms import inverted_index_graph
 from examples.utils import read_json_lines, write_json_lines
 
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input", required=True, help="Path to JSONL file with rows containing a 'text' column")
+    parser.add_argument("--input", required=True, help="Path to JSONL file with rows containing 'doc_id' and 'text'")
     parser.add_argument(
         "--output",
         default="-",
@@ -17,8 +17,8 @@ def main(argv: list[str] | None = None) -> None:
     )
     args = parser.parse_args(argv)
 
-    graph = word_count_graph(input_stream_name="input", text_column="text", count_column="count")
-    rows = graph.run(input=lambda: read_json_lines(args.input))
+    graph = inverted_index_graph(input_stream_name="docs")
+    rows = graph.run(docs=lambda: read_json_lines(args.input))
     write_json_lines(rows, args.output)
 
 
