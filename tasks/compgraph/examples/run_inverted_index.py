@@ -2,6 +2,12 @@
 from __future__ import annotations
 
 import argparse
+import sys
+from pathlib import Path
+
+if __package__ is None or __package__ == "":
+    # Allow running the script directly without installing the package
+    sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from compgraph.algorithms import inverted_index_graph
 from examples.utils import read_json_lines, write_json_lines

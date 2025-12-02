@@ -1,3 +1,0 @@
-compgraph
-examples
-tests
