@@ -217,7 +217,7 @@ public class Main {
         for (int i = 1; i < poly.size(); i++) {
             Point p = poly.get(i);
             Point s = poly.get(start);
-            if (p.x < s.x - EPS || (Math.abs(p.x - s.x) <= EPS && p.y < s.y - EPS)) {
+            if (p.y < s.y - EPS || (Math.abs(p.y - s.y) <= EPS && p.x < s.x - EPS)) {
                 start = i;
             }
         }
