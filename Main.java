@@ -14,7 +14,11 @@ public class Main {
         private String next() {
             while (tokenizer == null || !tokenizer.hasMoreElements()) {
                 try {
-                    tokenizer = new StringTokenizer(reader.readLine());
+                    String line = reader.readLine();
+                    if (line == null) {
+                        return null;
+                    }
+                    tokenizer = new StringTokenizer(line);
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
@@ -37,7 +41,7 @@ public class Main {
         private String nextLine() {
             String str = "";
             try {
-                if (tokenizer.hasMoreTokens()) {
+                if (tokenizer != null && tokenizer.hasMoreTokens()) {
                     str = tokenizer.nextToken("\n");
                 } else {
                     str = reader.readLine();
@@ -49,71 +53,7 @@ public class Main {
         }
     }
 
-    public static void main(String[] args) throws IOException {
-        FastReader in = new FastReader();
-        PrintWriter out = new PrintWriter(new BufferedWriter(new OutputStreamWriter(System.out)));
-
-        List<String> outputs = new ArrayList<>();
-
-        while (true) {
-            int n;
-            try {
-                n = in.nextInt();
-            } catch (Exception e) {
-                break;
-            }
-
-            List<Point> poly = new ArrayList<>();
-            for (int i = 0; i < n; i++) {
-                double x = in.nextDouble();
-                double y = in.nextDouble();
-                poly.add(new Point(x, y));
-            }
-
-            if (signedArea(poly) < 0) {
-                Collections.reverse(poly);
-            }
-
-            double[] bounds = boundingBox(poly);
-            double diag = Math.hypot(bounds[1] - bounds[0], bounds[3] - bounds[2]);
-            double low = 0.0;
-            double high = diag;
-
-            Point[] bestPair = null;
-            for (int iter = 0; iter < 70; iter++) {
-                double mid = (low + high) / 2.0;
-                Point[] candidate = tryPlace(poly, mid);
-                if (candidate != null) {
-                    low = mid;
-                    bestPair = candidate;
-                } else {
-                    high = mid;
-                }
-            }
-
-            Point[] finalPair = tryPlace(poly, low);
-            if (finalPair != null) {
-                bestPair = finalPair;
-            }
-
-            StringBuilder sb = new StringBuilder();
-            sb.append(String.format(Locale.US, "%.15f\n", low));
-            sb.append(String.format(Locale.US, "%.15f %.15f\n", bestPair[0].x, bestPair[0].y));
-            sb.append(String.format(Locale.US, "%.15f %.15f", bestPair[1].x, bestPair[1].y));
-            outputs.add(sb.toString());
-        }
-
-        for (int i = 0; i < outputs.size(); i++) {
-            out.print(outputs.get(i));
-            if (i + 1 < outputs.size()) {
-                out.print('\n');
-            }
-        }
-
-        out.flush();
-    }
-
-    private static final double EPS = 1e-10;
+    private static final double EPS = 1e-9;
 
     private static class Point {
         double x, y;
@@ -122,99 +62,66 @@ public class Main {
             this.x = x;
             this.y = y;
         }
+    }
 
-        Point subtract(Point other) {
-            return new Point(x - other.x, y - other.y);
+    public static void main(String[] args) throws IOException {
+        FastReader in = new FastReader();
+        PrintWriter out = new PrintWriter(new BufferedWriter(new OutputStreamWriter(System.out)));
+
+        String first = in.next();
+        if (first == null) {
+            out.flush();
+            return;
         }
+        double width = Double.parseDouble(first);
+        double height = in.nextDouble();
+        int n = in.nextInt();
 
-        Point add(Point other) {
-            return new Point(x + other.x, y + other.y);
-        }
-
-        Point scale(double k) {
-            return new Point(x * k, y * k);
-        }
-    }
-
-    private static double cross(Point a, Point b) {
-        return a.x * b.y - a.y * b.x;
-    }
-
-    private static double dot(Point a, Point b) {
-        return a.x * b.x + a.y * b.y;
-    }
-
-    private static double dist2(Point a, Point b) {
-        double dx = a.x - b.x;
-        double dy = a.y - b.y;
-        return dx * dx + dy * dy;
-    }
-
-    private static double signedArea(List<Point> poly) {
-        double area = 0.0;
-        int n = poly.size();
+        Point[] players = new Point[n];
         for (int i = 0; i < n; i++) {
-            Point p = poly.get(i);
-            Point q = poly.get((i + 1) % n);
-            area += p.x * q.y - p.y * q.x;
-        }
-        return area / 2.0;
-    }
-
-    private static double[] boundingBox(List<Point> poly) {
-        double minX = Double.POSITIVE_INFINITY;
-        double maxX = Double.NEGATIVE_INFINITY;
-        double minY = Double.POSITIVE_INFINITY;
-        double maxY = Double.NEGATIVE_INFINITY;
-        for (Point p : poly) {
-            minX = Math.min(minX, p.x);
-            maxX = Math.max(maxX, p.x);
-            minY = Math.min(minY, p.y);
-            maxY = Math.max(maxY, p.y);
-        }
-        return new double[]{minX, maxX, minY, maxY};
-    }
-
-    private static Point[] tryPlace(List<Point> poly, double r) {
-        List<Point> offset = buildOffset(poly, r);
-        if (offset.size() < 2) {
-            return null;
+            double px = in.nextDouble();
+            double py = in.nextDouble();
+            players[i] = new Point(px, py);
         }
 
-        double required = 4.0 * r * r - 1e-12;
-        if (offset.size() == 2) {
-            if (dist2(offset.get(0), offset.get(1)) + 1e-12 >= required) {
-                return new Point[]{offset.get(0), offset.get(1)};
+        List<Point> field = Arrays.asList(
+                new Point(0.0, 0.0),
+                new Point(width, 0.0),
+                new Point(width, height),
+                new Point(0.0, height)
+        );
+
+        for (int i = 0; i < n; i++) {
+            List<Point> cell = new ArrayList<>(field);
+            for (int j = 0; j < n; j++) {
+                if (i == j) continue;
+                Point pi = players[i];
+                Point pj = players[j];
+                double A = 2.0 * (pj.x - pi.x);
+                double B = 2.0 * (pj.y - pi.y);
+                double C = pi.x * pi.x - pj.x * pj.x + pi.y * pi.y - pj.y * pj.y;
+                cell = clipWithHalfPlane(cell, A, B, C);
+                if (cell.isEmpty()) {
+                    break;
+                }
             }
-            return null;
-        }
 
-        DiameterResult res = diameter(offset);
-        if (res.maxDist2 + 1e-12 >= required) {
-            return new Point[]{offset.get(res.a), offset.get(res.b)};
-        }
-        return null;
-    }
+            cell = cleanPolygon(cell);
+            cell = normalizePolygon(cell);
 
-    private static List<Point> buildOffset(List<Point> poly, double r) {
-        List<Point> res = new ArrayList<>(poly);
-        int n = poly.size();
-        for (int i = 0; i < n; i++) {
-            Point p1 = poly.get(i);
-            Point p2 = poly.get((i + 1) % n);
-            Point edge = p2.subtract(p1);
-            double len = Math.hypot(edge.x, edge.y);
-            Point normal = new Point(-edge.y / len, edge.x / len);
-            double d = dot(normal, p1) + r;
-            res = clipWithHalfPlane(res, normal, d);
-            if (res.isEmpty()) {
-                break;
+            out.print(cell.size());
+            for (Point p : cell) {
+                out.printf(Locale.US, " %.8f %.8f", p.x, p.y);
+            }
+            if (i + 1 < n) {
+                out.println();
             }
         }
-        return res;
+
+        out.flush();
     }
 
-    private static List<Point> clipWithHalfPlane(List<Point> poly, Point n, double d) {
+    private static List<Point> clipWithHalfPlane(List<Point> poly, double A, double B, double C) {
         List<Point> res = new ArrayList<>();
         if (poly.isEmpty()) {
             return res;
@@ -223,83 +130,102 @@ public class Main {
         for (int i = 0; i < m; i++) {
             Point cur = poly.get(i);
             Point next = poly.get((i + 1) % m);
-            double valCur = dot(n, cur) - d;
-            double valNext = dot(n, next) - d;
-            boolean inCur = valCur >= -EPS;
-            boolean inNext = valNext >= -EPS;
+            double valCur = A * cur.x + B * cur.y + C;
+            double valNext = A * next.x + B * next.y + C;
+            boolean inCur = valCur <= EPS;
+            boolean inNext = valNext <= EPS;
 
             if (inCur && inNext) {
                 res.add(next);
             } else if (inCur && !inNext) {
-                res.add(intersection(cur, next, n, d));
+                res.add(intersection(cur, next, A, B, C));
             } else if (!inCur && inNext) {
-                res.add(intersection(cur, next, n, d));
+                res.add(intersection(cur, next, A, B, C));
                 res.add(next);
             }
         }
         return res;
     }
 
-    private static Point intersection(Point a, Point b, Point n, double d) {
-        double da = dot(n, a) - d;
-        double db = dot(n, b) - d;
-        double t = da / (da - db);
-        Point dir = b.subtract(a);
-        return new Point(a.x + dir.x * t, a.y + dir.y * t);
+    private static Point intersection(Point a, Point b, double A, double B, double C) {
+        double valA = A * a.x + B * a.y + C;
+        double valB = A * b.x + B * b.y + C;
+        double t = valA / (valA - valB);
+        double x = a.x + (b.x - a.x) * t;
+        double y = a.y + (b.y - a.y) * t;
+        return new Point(x, y);
     }
 
-    private static class DiameterResult {
-        double maxDist2;
-        int a, b;
-
-        DiameterResult(double maxDist2, int a, int b) {
-            this.maxDist2 = maxDist2;
-            this.a = a;
-            this.b = b;
+    private static List<Point> cleanPolygon(List<Point> poly) {
+        if (poly.isEmpty()) {
+            return poly;
         }
-    }
-
-    private static DiameterResult diameter(List<Point> poly) {
-        int n = poly.size();
-        if (n == 1) {
-            return new DiameterResult(0.0, 0, 0);
+        List<Point> res = new ArrayList<>();
+        for (Point p : poly) {
+            if (!res.isEmpty()) {
+                Point last = res.get(res.size() - 1);
+                if (Math.hypot(p.x - last.x, p.y - last.y) <= EPS) {
+                    continue;
+                }
+            }
+            res.add(p);
         }
-        if (n == 2) {
-            return new DiameterResult(dist2(poly.get(0), poly.get(1)), 0, 1);
+        if (res.size() > 1) {
+            Point first = res.get(0);
+            Point last = res.get(res.size() - 1);
+            if (Math.hypot(first.x - last.x, first.y - last.y) <= EPS) {
+                res.remove(res.size() - 1);
+            }
         }
 
-        double maxDist = 0.0;
-        int bestA = 0;
-        int bestB = 1;
-
-        int j = 1;
-        for (int i = 0; i < n; i++) {
-            int ni = (i + 1) % n;
-            while (true) {
-                int nj = (j + 1) % n;
-                double cross1 = Math.abs(cross(poly.get(ni).subtract(poly.get(i)), poly.get(nj).subtract(poly.get(i))));
-                double cross2 = Math.abs(cross(poly.get(ni).subtract(poly.get(i)), poly.get(j).subtract(poly.get(i))));
-                if (cross1 <= cross2 + EPS) {
+        boolean changed;
+        do {
+            changed = false;
+            int m = res.size();
+            if (m < 3) break;
+            for (int i = 0; i < m; i++) {
+                Point prev = res.get((i + m - 1) % m);
+                Point cur = res.get(i);
+                Point next = res.get((i + 1) % m);
+                double cross = (cur.x - prev.x) * (next.y - cur.y) - (cur.y - prev.y) * (next.x - cur.x);
+                if (Math.abs(cross) <= EPS) {
+                    res.remove(i);
+                    changed = true;
                     break;
                 }
-                j = nj;
             }
+        } while (changed);
+        return res;
+    }
 
-            double d1 = dist2(poly.get(i), poly.get(j));
-            if (d1 > maxDist) {
-                maxDist = d1;
-                bestA = i;
-                bestB = j;
-            }
+    private static List<Point> normalizePolygon(List<Point> poly) {
+        if (poly.isEmpty()) {
+            return poly;
+        }
+        double area = 0.0;
+        int m = poly.size();
+        for (int i = 0; i < m; i++) {
+            Point a = poly.get(i);
+            Point b = poly.get((i + 1) % m);
+            area += a.x * b.y - b.x * a.y;
+        }
+        if (area < 0) {
+            Collections.reverse(poly);
+        }
 
-            double d2 = dist2(poly.get(ni), poly.get(j));
-            if (d2 > maxDist) {
-                maxDist = d2;
-                bestA = ni;
-                bestB = j;
+        int start = 0;
+        for (int i = 1; i < poly.size(); i++) {
+            Point p = poly.get(i);
+            Point s = poly.get(start);
+            if (p.y < s.y - EPS || (Math.abs(p.y - s.y) <= EPS && p.x < s.x - EPS)) {
+                start = i;
             }
         }
 
-        return new DiameterResult(maxDist, bestA, bestB);
+        List<Point> res = new ArrayList<>(poly.size());
+        for (int i = 0; i < poly.size(); i++) {
+            res.add(poly.get((start + i) % poly.size()));
+        }
+        return res;
     }
 }
